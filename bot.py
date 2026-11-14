@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ====================================================================
- ربات فروشگاهی حرفه‌ای با تمام قابلیت‌های یک سایت مدرن
+ ربات فروشگاهی حرفه‌ای با تمام قابلیت‌های یک سایت مدرن (نسخه مخصوص Render)
 ====================================================================
 
 قابلیت‌ها:
@@ -13,10 +13,7 @@
   - مشاهده سفارشات قبلی خریدار
   - پنل مدیریت کامل (محصول، سفارش، پرداخت، تیکت، کاربران، آمار)
   - استفاده از دکمه‌های رنگی (style) در بخش‌های مدیریتی
-
-تنظیمات اولیه (پایین همین فایل):
-    BOT_TOKEN   -> از @BotFather
-    ADMIN_IDS   -> لیست آیدی عددی مدیران (با @userinfobot بگیرید)
+  - مجهز به وب‌سرور داخلی و سیستم ضد خواب (Keep-Alive هر ۵ دقیقه) مخصوص Render
 
 اجرا:
     python bot.py
@@ -29,6 +26,10 @@ import os
 import re
 import random
 import string
+import time
+import threading
+import requests
+from flask import Flask, jsonify
 from datetime import datetime, timedelta
 from contextlib import closing
 
@@ -51,11 +52,11 @@ from telegram.ext import (
 )
 
 # ====================================================================
-#  تنظیمات اصلی – حتماً ویرایش کنید
+#  تنظیمات اصلی – تنظیم شده برای ربات و ادمین شما
 # ====================================================================
 
-BOT_TOKEN = "توکن ربات را اینجا وارد کنید"   # از @BotFather بگیرید
-ADMIN_IDS = [123456789]                        # لیست آیدی عددی مدیران (با @userinfobot بگیرید)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8649807066:AAGZlazLVFr-jWDz8BURuFSP2K7WNRmRh-4")
+ADMIN_IDS = [8248647747]                        # آیدی عددی مدیر اصلی
 CURRENCY = "تومان"
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shop_advanced.db")
 REFERRAL_BONUS_PERCENT = 5  # درصد پورسانت برای معرف (۵٪)
@@ -66,6 +67,73 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+# ====================================================================
+#  وب‌سرور Flask و سیستم ضد خواب قوی (Keep-Alive هر ۵ دقیقه) مخصوص Render
+# ====================================================================
+
+web_app = Flask(__name__)
+START_TIME = datetime.now()
+PING_COUNTER = 0
+
+@web_app.route("/")
+def home():
+    return "✅ ربات فروشگاهی با موفقیت روی Render فعال و در حال اجراست (24/7 Active).", 200
+
+@web_app.route("/health")
+def health():
+    global PING_COUNTER
+    PING_COUNTER += 1
+    uptime_seconds = int((datetime.now() - START_TIME).total_seconds())
+    return jsonify({
+        "status": "online",
+        "bot": "active",
+        "ping_count": PING_COUNTER,
+        "uptime_seconds": uptime_seconds,
+        "timestamp": datetime.now().isoformat()
+    }), 200
+
+def run_flask_server():
+    port = int(os.environ.get("PORT", 10000))
+    # غیرفعال کردن لاگ‌های اضافی فلسک برای تمیز ماندن کنسول
+    log = logging.getLogger("werkzeug")
+    log.setLevel(logging.ERROR)
+    logger.info(f"🌐 وب‌سرور Keep-Alive روی پورت {port} راه‌اندازی شد.")
+    web_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+def keep_alive_pinger():
+    """ارسال سیگنال قوی هر ۵ دقیقه (۳۰۰ ثانیه) به آدرس خارجی رندر و لوکال برای جلوگیری کامل از خوابیدن"""
+    time.sleep(15)  # صبر اولیه برای بالا آمدن کامل سرور
+    port = int(os.environ.get("PORT", 10000))
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RenderKeepAlive/2.0",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Connection": "keep-alive"
+    }
+    while True:
+        try:
+            # ۱. دریافت آدرس عمومی که خود Render به صورت خودکار در محیط قرار می‌دهد
+            render_external_url = os.environ.get("RENDER_EXTERNAL_URL")
+            if render_external_url:
+                target_url = f"{render_external_url.rstrip('/')}/health?ts={int(time.time())}"
+                res = requests.get(target_url, headers=headers, timeout=15)
+                logger.info(f"⚡ سیگنال ضد خواب به آدرس خارجی Render ارسال شد ({target_url}) | وضعیت: {res.status_code}")
+            else:
+                # ۲. در صورتی که متغیر محیطی هنوز ست نشده باشد، به پورت داخلی پینگ می‌زند
+                local_url = f"http://127.0.0.1:{port}/health?ts={int(time.time())}"
+                res = requests.get(local_url, headers=headers, timeout=10)
+                logger.info(f"⚡ سیگنال ضد خواب داخلی ارسال شد | وضعیت: {res.status_code}")
+        except Exception as e:
+            logger.warning(f"⚠️ خطا در ارسال سیگنال ضد خواب (تلاش مجدد در دوره بعد): {e}")
+
+        # انتظار دقیقاً ۵ دقیقه (۳۰۰ ثانیه)
+        time.sleep(300)
+
+def start_render_keep_alive():
+    server_thread = threading.Thread(target=run_flask_server, daemon=True)
+    server_thread.start()
+    pinger_thread = threading.Thread(target=keep_alive_pinger, daemon=True)
+    pinger_thread.start()
 
 # ====================================================================
 #  دیتابیس (SQLite) – جداول جدید
@@ -1541,6 +1609,9 @@ async def admin_back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ====================================================================
 def main():
     init_db()
+    # راه‌اندازی وب‌سرور و پینگر ضد خواب ۵ دقیقه‌ای مخصوص Render
+    start_render_keep_alive()
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -1594,7 +1665,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_close_ticket_callback, pattern=r"^close_ticket:"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.edit_message_text("به منوی اصلی بازگشتید."), pattern="^main_menu$"))
 
-    logger.info("ربات با تمام قابلیت‌ها راه‌اندازی شد.")
+    logger.info("ربات با تمام قابلیت‌ها و سیستم ضد خواب Render راه‌اندازی شد.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
