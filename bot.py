@@ -37,6 +37,7 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
@@ -631,20 +632,42 @@ def format_price(amount: int) -> str:
 
 def main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     rows = [
-        ["🛍 مشاهده محصولات", "🛒 سبد خرید"],
-        ["🧾 سفارشات من", "📞 پشتیبانی"],
+        [
+            KeyboardButton("🛍 مشاهده محصولات", style="primary"),
+            KeyboardButton("🛒 سبد خرید", style="success"),
+        ],
+        [
+            KeyboardButton("🧾 سفارشات من", style="primary"),
+            KeyboardButton("📞 پشتیبانی", style="danger"),
+        ],
     ]
     if is_admin(user_id):
-        rows.append(["⚙️ پنل مدیریت"])
+        rows.append([KeyboardButton("⚙️ پنل مدیریت", style="success")])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     rows = [
-        ["➕ افزودن دسته", "➕ افزودن محصول", "➕ افزودن واریانت"],
-        ["📋 لیست محصولات", "🧾 مدیریت سفارشات"],
-        ["💳 مدیریت پرداخت‌ها", "🎫 مدیریت کوپن‌ها"],
-        ["📩 تیکت‌های پشتیبانی", "📊 آمار فروش"],
-        ["👥 کاربران", "🔙 بازگشت به منوی اصلی"],
+        [
+            KeyboardButton("➕ افزودن دسته", style="success"),
+            KeyboardButton("➕ افزودن محصول", style="success"),
+            KeyboardButton("➕ افزودن واریانت", style="success"),
+        ],
+        [
+            KeyboardButton("📋 لیست محصولات", style="primary"),
+            KeyboardButton("🧾 مدیریت سفارشات", style="primary"),
+        ],
+        [
+            KeyboardButton("💳 مدیریت پرداخت‌ها", style="success"),
+            KeyboardButton("🎫 مدیریت کوپن‌ها", style="primary"),
+        ],
+        [
+            KeyboardButton("📩 تیکت‌های پشتیبانی", style="primary"),
+            KeyboardButton("📊 آمار فروش", style="success"),
+        ],
+        [
+            KeyboardButton("👥 کاربران", style="primary"),
+            KeyboardButton("🔙 بازگشت به منوی اصلی", style="danger"),
+        ],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
@@ -715,7 +738,10 @@ async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not categories:
         await update.message.reply_text("فعلاً دسته‌بندی وجود ندارد.")
         return
-    keyboard = [[InlineKeyboardButton(cat["name"], callback_data=f"cat:{cat['id']}")] for cat in categories]
+    keyboard = [
+        [InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"cat:{cat['id']}", style="primary")]
+        for cat in categories
+    ]
     await update.message.reply_text("دسته‌بندی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def show_products_in_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -760,9 +786,10 @@ async def show_variants(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     keyboard = []
     for v in variants:
+        btn_style = "success" if v["stock"] > 0 else "danger"
         btn_text = f"{v['variant_name']} - {format_price(v['price'])} (موجودی: {v['stock']})"
-        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"add:{v['id']}", style="primary")])
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"cat:{query.data.split(':')[1]}")])
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"add:{v['id']}", style=btn_style)])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"cat:{query.data.split(':')[1]}", style="danger")])
     await query.edit_message_text("تنوع مورد نظر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def add_to_cart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -791,7 +818,7 @@ async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         subtotal = item["price"] * item["quantity"]
         total += subtotal
         text_lines.append(f"• {item['product_name']} - {item['variant_name']} × {item['quantity']} = {format_price(subtotal)}")
-        keyboard_rows.append([InlineKeyboardButton(f"🗑 حذف", callback_data=f"rmcart:{item['cart_id']}", style="danger")])
+        keyboard_rows.append([InlineKeyboardButton(f"🗑 حذف {item['product_name']}", callback_data=f"rmcart:{item['cart_id']}", style="danger")])
     text_lines.append(f"\n💰 جمع کل: {format_price(total)}")
     coupon_code = context.user_data.get("coupon_code")
     if coupon_code:
@@ -804,8 +831,8 @@ async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 discount = min(coupon["discount_value"], total)
             text_lines.append(f"🎫 تخفیف ({coupon_code}): -{format_price(discount)}")
             text_lines.append(f"💰 مبلغ قابل پرداخت: {format_price(total - discount)}")
-    keyboard_rows.append([InlineKeyboardButton("🎫 اعمال کوپن", callback_data="apply_coupon", style="primary")])
-    keyboard_rows.append([InlineKeyboardButton("✅ ثبت سفارش", callback_data="checkout", style="success")])
+    keyboard_rows.append([InlineKeyboardButton("🎫 اعمال کوپن تخفیف", callback_data="apply_coupon", style="primary")])
+    keyboard_rows.append([InlineKeyboardButton("✅ ثبت نهایی سفارش", callback_data="checkout", style="success")])
     keyboard_rows.append([InlineKeyboardButton("❌ خالی کردن سبد", callback_data="clearcart", style="danger")])
     await update.message.reply_text("\n".join(text_lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
@@ -902,7 +929,7 @@ async def checkout_get_address(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 پرداخت کارت به کارت", callback_data=f"pay:{order_id}", style="success")],
-        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
+        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu", style="primary")]
     ])
     await update.message.reply_text(
         "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
@@ -1185,7 +1212,10 @@ async def add_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not categories:
         await update.message.reply_text("ابتدا دسته‌بندی بسازید.")
         return ConversationHandler.END
-    keyboard = [[InlineKeyboardButton(cat["name"], callback_data=f"addprod_cat:{cat['id']}")] for cat in categories]
+    keyboard = [
+        [InlineKeyboardButton(f"📂 {cat['name']}", callback_data=f"addprod_cat:{cat['id']}", style="primary")]
+        for cat in categories
+    ]
     await update.message.reply_text("محصول در کدام دسته باشد؟", reply_markup=InlineKeyboardMarkup(keyboard))
     return ADD_PRODUCT_CATEGORY
 
@@ -1241,7 +1271,10 @@ async def add_variant_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not unique_products:
         await update.message.reply_text("هیچ محصولی موجود نیست. ابتدا محصول اضافه کنید.")
         return ConversationHandler.END
-    keyboard = [[InlineKeyboardButton(name, callback_data=f"variant_prod:{pid}")] for pid, name in unique_products.items()]
+    keyboard = [
+        [InlineKeyboardButton(f"🛍 {name}", callback_data=f"variant_prod:{pid}", style="primary")]
+        for pid, name in unique_products.items()
+    ]
     await update.message.reply_text("محصول مورد نظر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
     return ADD_VARIANT_PRODUCT
 
